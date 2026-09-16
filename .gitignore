@@ -1,0 +1,9 @@
+.env
+accounts.sqlite3
+__pycache__/
+*.py[cod]
+client/bin/
+client/obj/
+client/publish/
+client/single/
+.env.production

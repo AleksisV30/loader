@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: flintfix-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_PATH
+        value: accounts.sqlite3
+      - key: DOWNLOAD_FILE
+        value: client/Client-built.zip
+      - key: CLIENT_FILENAME
+        value: client-build.zip

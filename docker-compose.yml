@@ -1,0 +1,41 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    env_file: .env.production
+    environment:
+      DATABASE_PATH: /app/data/accounts.sqlite3
+      DOWNLOAD_FILE: /app/client/Client-built.zip
+    volumes:
+      - account_data:/app/data
+    expose:
+      - "8000"
+
+  bot:
+    build: .
+    restart: unless-stopped
+    command: python bot.py
+    env_file: .env.production
+    environment:
+      DATABASE_PATH: /app/data/accounts.sqlite3
+    volumes:
+      - account_data:/app/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  account_data:
+  caddy_data:
+  caddy_config:
