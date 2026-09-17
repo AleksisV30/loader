@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,9 +12,14 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from account_store import AccountStore
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Client Download API")
 security = HTTPBasic()
 store = AccountStore(os.getenv("DATABASE_PATH", "accounts.sqlite3"))
+if store.database_url:
+    logging.info("Using shared PostgreSQL account database")
+else:
+    logging.info("Using SQLite account database")
 
 
 def require_account(credentials: HTTPBasicCredentials = Depends(security)) -> str:
