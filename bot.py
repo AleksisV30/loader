@@ -22,22 +22,45 @@ class AccountBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self) -> None:
-        await self.tree.sync()
+        guild_id = os.getenv("DISCORD_GUILD_ID")
+        if guild_id:
+            guild = discord.Object(id=int(guild_id))
+            commands = list(self.tree.get_commands())
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            for command in commands:
+                self.tree.add_command(command, guild=guild, override=True)
+            await self.tree.sync(guild=guild)
+            logging.info("Synced commands to guild %s", guild_id)
+        else:
+            await self.tree.sync()
 
 
 store = AccountStore(os.getenv("DATABASE_PATH", "accounts.sqlite3"))
 bot = AccountBot(store)
+if store.database_url:
+    logging.info("Using shared PostgreSQL account database")
+else:
+    logging.info("Using SQLite account database at %s", store.database_path.resolve())
+
+
+@bot.event
+async def on_ready() -> None:
+    logging.info("Bot is online as %s", bot.user)
 
 
 @bot.tree.command(name="create-account", description="Create your download account")
 async def create_account(interaction: discord.Interaction) -> None:
     account = store.create_account(interaction.user.id)
     if account is None:
+        logging.info("Account creation skipped for Discord user %s", interaction.user.id)
         await interaction.response.send_message(
             "You already have an account, or the account could not be created.",
             ephemeral=True,
         )
         return
+
+    logging.info("Created account for Discord user %s", interaction.user.id)
 
     try:
         await interaction.user.send(

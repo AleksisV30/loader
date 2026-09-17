@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 
 @dataclass(frozen=True)
@@ -18,23 +19,37 @@ class Account:
 
 class AccountStore:
     def __init__(self, database_path: str) -> None:
+        self.database_url = os.getenv("DATABASE_URL")
         self.database_path = Path(database_path)
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.database_url:
+            self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute(
-                """
+                self._schema_sql()
+            )
+
+    def _schema_sql(self) -> str:
+        blob_type = "BYTEA" if self.database_url else "BLOB"
+        return f"""
                 CREATE TABLE IF NOT EXISTS accounts (
                     discord_user_id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
-                    password_salt BLOB NOT NULL,
-                    password_hash BLOB NOT NULL,
+                    password_salt {blob_type} NOT NULL,
+                    password_hash {blob_type} NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
-            )
 
     @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _connect(self) -> Iterator[Any]:
+        if self.database_url:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            with psycopg.connect(self.database_url, row_factory=dict_row) as connection:
+                yield connection
+            return
+
         connection = sqlite3.connect(self.database_path)
         connection.row_factory = sqlite3.Row
         try:
@@ -56,7 +71,9 @@ class AccountStore:
         try:
             with self._connect() as connection:
                 connection.execute(
-                    "INSERT INTO accounts (discord_user_id, username, password_salt, password_hash) VALUES (?, ?, ?, ?)",
+                    self._query(
+                        "INSERT INTO accounts (discord_user_id, username, password_salt, password_hash) VALUES (?, ?, ?, ?)"
+                    ),
                     (str(discord_user_id), username, salt, password_hash),
                 )
         except sqlite3.IntegrityError:
@@ -66,7 +83,7 @@ class AccountStore:
     def authenticate(self, username: str, password: str) -> bool:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT password_salt, password_hash FROM accounts WHERE username = ?",
+                self._query("SELECT password_salt, password_hash FROM accounts WHERE username = ?"),
                 (username,),
             ).fetchone()
         if row is None:
@@ -77,10 +94,15 @@ class AccountStore:
     def remove_account(self, discord_user_id: int) -> bool:
         with self._connect() as connection:
             result = connection.execute(
-                "DELETE FROM accounts WHERE discord_user_id = ?",
+                self._query("DELETE FROM accounts WHERE discord_user_id = ?"),
                 (str(discord_user_id),),
             )
         return result.rowcount == 1
+
+    def _query(self, query: str) -> str:
+        if self.database_url:
+            return query.replace("?", "%s")
+        return query
 
     @staticmethod
     def _hash_password(password: str, salt: bytes) -> bytes:
